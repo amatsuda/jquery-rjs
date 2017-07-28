@@ -7,132 +7,26 @@ class Bunny < Struct.new(:Bunny, :id)
   def to_key() id ? [id] : nil end
 end
 
-class Author
-  extend ActiveModel::Naming
-  include ActiveModel::Conversion
-
-  attr_reader :id
-  def to_key() id ? [id] : nil end
-  def save; @id = 1 end
-  def new_record?; @id.nil? end
-  def name
-    @id.nil? ? 'new author' : "author ##{@id}"
-  end
-end
-
-class Article
-  extend ActiveModel::Naming
-  include ActiveModel::Conversion
-  attr_reader :id
-  attr_reader :author_id
-  def to_key() id ? [id] : nil end
-  def save; @id = 1; @author_id = 1 end
-  def new_record?; @id.nil? end
-  def name
-    @id.nil? ? 'new article' : "article ##{@id}"
-  end
-end
-
-class Author::Nested < Author; end
-
-
-class JqueryHelperBaseTest < ActionView::TestCase
-  attr_accessor :formats, :output_buffer
-
-  def update_details(details)
-    @details = details
-    yield if block_given?
-  end
-
-  def setup
-    super
-    @template = self
-  end
-
-  def url_for(options)
-    if options.is_a?(String)
-      options
-    else
-      url =  "http://www.example.com/"
-      url << options[:action].to_s if options and options[:action]
-      url << "?a=#{options[:a]}" if options && options[:a]
-      url << "&b=#{options[:b]}" if options && options[:a] && options[:b]
-      url
-    end
-  end
-
+class DeRjsBaseTest < Minitest::Test
   protected
-    def request_forgery_protection_token
-      nil
-    end
+  def not_supported
+    skip "not supported"
+  end
 
-    def protect_against_forgery?
-      false
-    end
+  def create_generator
+    block = Proc.new { |*args| yield(*args) if block_given? }
+    DeRjs::JqueryGenerator.new self, &block
+  end
 
-    def create_generator
-      block = Proc.new { |*args| yield(*args) if block_given? }
-      ::ActionView::Helpers::JqueryHelper::JavaScriptGenerator.new self, &block
-    end
+  def generate_js(rjs)
+    rewritten_source = DeRjs::Rewriter.rewrite_rjs(rjs)
+    generator = DeRjs::JqueryGenerator.new(nil) { eval(rewritten_source)}
+    generator.to_s
+  end
 end
 
-class JqueryHelperTest < JqueryHelperBaseTest
-  tests ActionView::Helpers::JqueryHelper
 
-  def _evaluate_assigns_and_ivars() end
-
-  def setup
-    @record = @author = Author.new
-    @article = Article.new
-    super
-  end
-
-  def test_update_page
-    old_output_buffer = output_buffer
-
-    block = Proc.new { |page| page.replace_html('foo', 'bar') }
-    assert_equal create_generator(&block).to_s, update_page(&block)
-
-    assert_equal old_output_buffer, output_buffer
-  end
-
-  def test_update_page_tag
-    block = Proc.new { |page| page.replace_html('foo', 'bar') }
-    assert_equal javascript_tag(create_generator(&block).to_s), update_page_tag(&block)
-  end
-
-  def test_update_page_tag_with_html_options
-    block = Proc.new { |page| page.replace_html('foo', 'bar') }
-    assert_equal javascript_tag(create_generator(&block).to_s, {:defer => 'true'}), update_page_tag({:defer => 'true'}, &block)
-  end
-
-  def test_remote_function
-    res = remote_function(:url => authors_path, :with => "'author[name]='+$F('author_name')+'&author[dob]='+$F('author_dob')")
-    assert_equal "new Ajax.Request('/authors', {asynchronous:true, evalScripts:true, parameters:'author[name]='+$F('author_name')+'&author[dob]='+$F('author_dob')})", res
-    assert res.html_safe?
-  end
-
-  protected
-    def author_path(record)
-      "/authors/#{record.id}"
-    end
-
-    def authors_path
-      "/authors"
-    end
-
-    def author_articles_path(author)
-      "/authors/#{author.id}/articles"
-    end
-
-    def author_article_path(author, article)
-      "/authors/#{author.id}/articles/#{article.id}"
-    end
-end
-
-class JavaScriptGeneratorTest < JqueryHelperBaseTest
-  tests ActionView::Helpers::JqueryUiHelper.send(:include, ActionView::Helpers::JqueryHelper)
-
+class DeRjsTest < DeRjsBaseTest
   def setup
     super
     @generator = create_generator
@@ -146,71 +40,89 @@ class JavaScriptGeneratorTest < JqueryHelperBaseTest
   def _evaluate_assigns_and_ivars() end
 
   def test_insert_html_with_string
-    assert_equal '$("#element").prepend("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");',
-      @generator.insert_html(:top, 'element', '<p>This is a test</p>')
-    assert_equal '$("#element").append("\\u003Cp\u003EThis is a test\\u003C/p\u003E");',
-      @generator.insert_html(:bottom, 'element', '<p>This is a test</p>')
-    assert_equal '$("#element").before("\\u003Cp\u003EThis is a test\\u003C/p\u003E");',
-      @generator.insert_html(:before, 'element', '<p>This is a test</p>')
-    assert_equal '$("#element").after("\\u003Cp\u003EThis is a test\\u003C/p\u003E");',
-      @generator.insert_html(:after, 'element', '<p>This is a test</p>')
+    assert_equal '$("#element").prepend("\\u003cp\\u003eThis is a test\\u003c/p\\u003e");',
+      generate_js(%Q{ page.insert_html(:top, 'element', '<p>This is a test</p>') })
+    assert_equal '$("#element").append("\\u003cp\u003eThis is a test\\u003c/p\u003e");',
+      generate_js(%Q{ page.insert_html(:bottom, 'element', '<p>This is a test</p>') })
+    assert_equal '$("#element").before("\\u003cp\u003eThis is a test\\u003c/p\u003e");',
+      generate_js(%Q{ page.insert_html(:before, 'element', '<p>This is a test</p>') })
+    assert_equal '$("#element").after("\\u003cp\u003eThis is a test\\u003c/p\u003e");',
+      generate_js(%Q{ page.insert_html(:after, 'element', '<p>This is a test</p>') })
   end
 
   def test_replace_html_with_string
-    assert_equal '$("#element").html("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");',
-      @generator.replace_html('element', '<p>This is a test</p>')
+    assert_equal '$("#element").html("\\u003cp\\u003eThis is a test\\u003c/p\\u003e");',
+      generate_js(%Q{ page.replace_html('element', '<p>This is a test</p>') })
   end
 
   def test_replace_element_with_string
-    assert_equal '$("#element").replaceWith("\\u003Cdiv id=\"element\"\\u003E\\u003Cp\\u003EThis is a test\\u003C/p\\u003E\\u003C/div\\u003E");',
-      @generator.replace('element', '<div id="element"><p>This is a test</p></div>')
+    assert_equal '$("#element").replaceWith("\\u003cdiv id=\"element\"\\u003e\\u003cp\\u003eThis is a test\\u003c/p\\u003e\\u003c/div\\u003e");',
+      generate_js(%Q{ page.replace('element', '<div id="element"><p>This is a test</p></div>') })
   end
+
+  def test_insert_html_with_hash
+    assert_equal '$("#element").prepend("<%= escape_javascript(render(:partial => "post", :locals => {:ab => "cd"})) %>");',
+      generate_js(%Q{ page.insert_html(:top, 'element', :partial => "post", :locals => {:ab => "cd"}) })
+  end
+
+  def test_replace_html_with_hash
+    assert_equal '$("#element").html("<%= escape_javascript(render(:partial => "post", :locals => {:ab => "cd"})) %>");',
+      generate_js(%Q{ page.replace_html('element', :partial => "post", :locals => {:ab => "cd"}) })
+  end
+
+  def test_replace_element_with_hash
+    assert_equal '$("#element").replaceWith("<%= escape_javascript(render(:partial => "post", :locals => {:ab => "cd"})) %>");',
+      generate_js(%Q{ page.replace('element', :partial => "post", :locals => {:ab => "cd"}) })
+  end
+
 
   def test_remove
     assert_equal '$("#foo").remove();',
-      @generator.remove('foo')
+      generate_js(%Q{ page.remove('foo') })
     assert_equal '$("#foo,#bar,#baz").remove();',
-      @generator.remove('foo', 'bar', 'baz')
+      generate_js(%Q{ page.remove('foo', 'bar', 'baz') })
   end
 
   def test_show
     assert_equal '$("#foo").show();',
-      @generator.show('foo')
+      generate_js(%Q{ page.show('foo') })
     assert_equal '$("#foo,#bar,#baz").show();',
-      @generator.show('foo', 'bar', 'baz')
+      generate_js(%Q{ page.show('foo', 'bar', 'baz') })
   end
 
   def test_hide
     assert_equal '$("#foo").hide();',
-      @generator.hide('foo')
+      generate_js(%Q{ page.hide('foo') })
     assert_equal '$("#foo,#bar,#baz").hide();',
-      @generator.hide('foo', 'bar', 'baz')
+      generate_js(%Q{ page.hide('foo', 'bar', 'baz') })
   end
 
   def test_toggle
     assert_equal '$("#foo").toggle();',
-      @generator.toggle('foo')
+      generate_js(%Q{ page.toggle('foo') })
     assert_equal '$("#foo,#bar,#baz").toggle();',
-      @generator.toggle('foo', 'bar', 'baz')
+      generate_js(%Q{ page.toggle('foo', 'bar', 'baz') })
   end
 
   def test_alert
-    assert_equal 'alert("hello");', @generator.alert('hello')
+    assert_equal 'alert("hello");', generate_js(%Q{ page.alert('hello') })
   end
 
   def test_redirect_to
-    assert_equal 'window.location.href = "http://www.example.com/welcome";',
-      @generator.redirect_to(:action => 'welcome')
     assert_equal 'window.location.href = "http://www.example.com/welcome?a=b&c=d";',
-      @generator.redirect_to("http://www.example.com/welcome?a=b&c=d")
+      generate_js(%Q{ page.redirect_to("http://www.example.com/welcome?a=b&c=d") })
+    assert_equal 'window.location.href = "<%= url_for(:action => \'welcome\') %>";',
+      generate_js(%Q{ page.redirect_to(:action => 'welcome') })
   end
 
   def test_reload
     assert_equal 'window.location.reload();',
-      @generator.reload
+      generate_js(%Q{ page.reload })
   end
 
   def test_delay
+    not_supported
+
     @generator.delay(20) do
       @generator.hide('foo')
     end
@@ -219,46 +131,58 @@ class JavaScriptGeneratorTest < JqueryHelperBaseTest
   end
 
   def test_to_s
+    not_supported
+
     @generator.insert_html(:top, 'element', '<p>This is a test</p>')
     @generator.insert_html(:bottom, 'element', '<p>This is a test</p>')
     @generator.remove('foo', 'bar')
     @generator.replace_html('baz', '<p>This is a test</p>')
 
     assert_equal <<-EOS.chomp, @generator.to_s
-$("#element").prepend("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");
-$("#element").append("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");
+$("#element").prepend("\\u003cp\\u003eThis is a test\\u003c/p\\u003e");
+$("#element").append("\\u003cp\\u003eThis is a test\\u003c/p\\u003e");
 $("#foo,#bar").remove();
-$("#baz").html("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");
+$("#baz").html("\\u003cp\\u003eThis is a test\\u003c/p\\u003e");
     EOS
   end
 
   def test_element_access
-    assert_equal %($("#hello");), @generator['hello']
+    assert_equal %($("#hello");), generate_js(%Q{ page['hello'] })
+  end
+
+  def test_element_access_on_variable
+    assert_raises DeRjs::Rewriter::Erbify::MustTranslateManually do
+      assert_equal %($("#<%= 'hello' + @var %>");), generate_js(%Q{ page['hello' + @var] })
+    end
+    assert_raises DeRjs::Rewriter::Erbify::MustTranslateManually do
+      assert_equal %($("#<%= 'hello' + @var %>").hide();), generate_js(%Q{ page['hello' + @var].hide })
+    end
   end
 
   def test_element_access_on_records
-    assert_equal %($("#bunny_5");),   @generator[Bunny.new(:id => 5)]
-    assert_equal %($("#new_bunny");), @generator[Bunny.new]
+    assert_raises DeRjs::Rewriter::Erbify::MustTranslateManually do
+      assert_equal %($("#<%= Bunny.new(:id => 5) %>");), generate_js(%Q{ page[Bunny.new(:id => 5)] })
+    end
+    assert_raises DeRjs::Rewriter::Erbify::MustTranslateManually do
+      assert_equal %($("#<%= Bunny.new %>");), generate_js(%Q{ page[Bunny.new] })
+    end
   end
 
+
   def test_element_proxy_one_deep
-    @generator['hello'].hide
-    assert_equal %($("#hello").hide();), @generator.to_s
+    assert_equal %($("#hello").hide();), generate_js(%Q{ page['hello'].hide })
   end
 
   def test_element_proxy_variable_access
-    @generator['hello']['style']
-    assert_equal %($("#hello").style;), @generator.to_s
+    assert_equal %($("#hello").style;), generate_js(%Q{ page['hello']['style'] })
   end
 
   def test_element_proxy_variable_access_with_assignment
-    @generator['hello']['style']['color'] = 'red'
-    assert_equal %($("#hello").style.color = "red";), @generator.to_s
+    assert_equal %($("#hello").style.color = "red";), generate_js(%Q{ page['hello']['style']['color'] = 'red' })
   end
 
   def test_element_proxy_assignment
-    @generator['hello'].width = 400
-    assert_equal %($("#hello").width = 400;), @generator.to_s
+    assert_equal %($("#hello").width = 400;), generate_js(%Q{ page['hello'].width = 400 })
   end
 
   def test_element_proxy_two_deep
@@ -271,18 +195,22 @@ $("#baz").html("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");
   end
 
   def test_select_proxy_one_deep
-    @generator.select('p.welcome b').first.hide
-    assert_equal %($("p.welcome b").first().hide();), @generator.to_s
+    assert_equal %($("p.welcome b").first().hide();), generate_js(%Q{ page.select('p.welcome b').first.hide })
   end
 
   def test_visual_effect
     assert_equal %($(\"#blah\").effect(\"puff\",{});),
-      @generator.visual_effect(:puff,'blah')
+      generate_js(%Q{ page.visual_effect(:puff,'blah') })
   end
 
   def test_visual_effect_toggle
     assert_equal %($(\"#blah\").toggle(\"fade\",{});),
-      @generator.visual_effect(:toggle_appear,'blah')
+      generate_js(%Q{ page.visual_effect(:toggle_appear,'blah') })
+  end
+
+  def test_visual_effect_with_variable
+    assert_equal %($(\"#<%= "blah" + blah.id %>\").toggle(\"fade\",{});),
+      generate_js(%Q{ page.visual_effect(:toggle_appear,"blah" + blah.id) })
   end
 
   def test_sortable
@@ -305,15 +233,19 @@ $("#baz").html("\\u003Cp\\u003EThis is a test\\u003C/p\\u003E");
   end
 
   def test_collection_first_and_last
-    @generator.select('p.welcome b').first.hide()
-    @generator.select('p.welcome b').last.show()
-    assert_equal <<-EOS.strip, @generator.to_s
+    js = generate_js(%Q{
+    page.select('p.welcome b').first.hide()
+    page.select('p.welcome b').last.show()
+    })
+    assert_equal <<-EOS.strip, js
 $("p.welcome b").first().hide();
 $("p.welcome b").last().show();
       EOS
   end
 
   def test_collection_proxy_with_each
+    not_supported
+
     @generator.select('p.welcome b').each do |value|
       value.remove_class_name 'selected'
     end
@@ -331,6 +263,8 @@ $("#value").effect("highlight",{});
   end
 
   def test_collection_proxy_on_collect
+    not_supported
+
     @generator.select('p').collect('a') { |para| para.show }
     @generator.select('p').collect { |para| para.hide }
     assert_equal <<-EOS.strip, @generator.to_s
@@ -345,6 +279,8 @@ return value.hide();
   end
 
   def test_collection_proxy_with_grep
+    not_supported
+
     @generator.select('p').grep 'a', /^a/ do |value|
       @generator << '(value.className == "welcome")'
     end
@@ -365,6 +301,8 @@ return (value.className == "welcome");
   end
 
   def test_collection_proxy_with_inject
+    not_supported
+
     @generator.select('p').inject 'a', [] do |memo, value|
       @generator << '(value.className == "welcome")'
     end
@@ -385,11 +323,13 @@ return (value.className == "welcome");
   end
 
   def test_collection_proxy_with_pluck
-    @generator.select('p').pluck('a', 'className')
-    assert_equal %(var a = $("p").pluck("className");), @generator.to_s
+    js = generate_js(%Q{ page.select('p').pluck('a', 'className') })
+    assert_equal %(var a = $("p").pluck("className");), js
   end
 
   def test_collection_proxy_with_zip
+    not_supported
+
     ActionView::Helpers::JavaScriptCollectionProxy.new(@generator, '[1, 2, 3]').zip('a', [4, 5, 6], [7, 8, 9])
     ActionView::Helpers::JavaScriptCollectionProxy.new(@generator, '[1, 2, 3]').zip('b', [4, 5, 6], [7, 8, 9]) do |array|
       @generator.call 'array.reverse'
@@ -404,6 +344,8 @@ return array.reverse();
   end
 
   def test_collection_proxy_with_find_all
+    not_supported
+
     @generator.select('p').find_all 'a' do |value, index|
       @generator << '(value.className == "welcome")'
     end
@@ -416,6 +358,8 @@ return (value.className == "welcome");
   end
 
   def test_collection_proxy_with_in_groups_of
+    not_supported
+
     @generator.select('p').in_groups_of('a', 3)
     @generator.select('p').in_groups_of('a', 3, 'x')
     assert_equal <<-EOS.strip, @generator.to_s
@@ -425,6 +369,8 @@ var a = $("p").inGroupsOf(3, "x");
   end
 
   def test_collection_proxy_with_each_slice
+    not_supported
+
     @generator.select('p').each_slice('a', 3)
     @generator.select('p').each_slice('a', 3) do |group, index|
       group.reverse
@@ -438,15 +384,17 @@ return value.reverse();
     EOS
   end
 
-  def test_debug_rjs
-    ActionView::Base.debug_rjs = true
-    @generator['welcome'].replace_html 'Welcome'
-    assert_equal "try {\n$(\"#welcome\").html(\"Welcome\");\n} catch (e) { alert('RJS error:\\n\\n' + e.toString()); alert('$(\\\"#welcome\\\").html(\\\"Welcome\\\");'); throw e }", @generator.to_s
-  ensure
-    ActionView::Base.debug_rjs = false
-  end
+  #def test_debug_rjs
+    #ActionView::Base.debug_rjs = true
+    #@generator['welcome'].replace_html 'Welcome'
+    #assert_equal "try {\n$(\"#welcome\").html(\"Welcome\");\n} catch (e) { alert('RJS error:\\n\\n' + e.toString()); alert('$(\\\"#welcome\\\").html(\\\"Welcome\\\");'); throw e }", @generator.to_s
+  #ensure
+    #ActionView::Base.debug_rjs = false
+  #end
 
   def test_literal
+    not_supported
+
     literal = @generator.literal("function() {}")
     assert_equal "function() {}", ActiveSupport::JSON.encode(literal)
     assert_equal "", @generator.to_s
@@ -458,6 +406,8 @@ return value.reverse();
   end
 
   def test_call_with_block
+    not_supported
+
     @generator.call(:before)
     @generator.call(:my_method) do |p|
       p[:one].show
@@ -471,6 +421,8 @@ return value.reverse();
   end
 
   def test_class_proxy_call_with_block
+    not_supported
+
     @generator.my_object.my_method do |p|
       p[:one].show
       p[:two].hide
